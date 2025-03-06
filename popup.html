@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>自动链接打开助手</title>
+  <style>
+    body {
+      width: 300px;
+      padding: 15px;
+      font-family: system-ui, -apple-system, sans-serif;
+    }
+    .switch {
+      display: flex;
+      align-items: center;
+      margin-bottom: 15px;
+    }
+    .switch input {
+      margin-right: 10px;
+    }
+    button {
+      width: 100%;
+      padding: 8px;
+      margin: 5px 0;
+      border: none;
+      border-radius: 4px;
+      background-color: #4285f4;
+      color: white;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #3367d6;
+    }
+    .history-list {
+      margin-top: 15px;
+      max-height: 300px;
+      overflow-y: auto;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+    }
+    .history-item {
+      padding: 8px;
+      border-bottom: 1px solid #eee;
+      font-size: 12px;
+    }
+    .history-item:last-child {
+      border-bottom: none;
+    }
+    .timestamp {
+      color: #666;
+      font-size: 11px;
+    }
+    .url {
+      word-break: break-all;
+      color: #1a73e8;
+      margin: 4px 0;
+    }
+    .success {
+      color: #34a853;
+    }
+    .error {
+      color: #ea4335;
+    }
+  </style>
+</head>
+<body>
+  <h2>自动链接打开助手</h2>
+  <div class="switch">
+    <input type="checkbox" id="enableExtension" checked>
+    <label for="enableExtension">启用扩展</label>
+  </div>
+  <button id="clearHistory">清除历史记录</button>
+  <div id="history-list" class="history-list">
+    <!-- 历史记录将在这里动态显示 -->
+  </div>
+  <script src="redirect_history.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html> 

@@ -1,0 +1,53 @@
+{
+  "manifest_version": 3,
+  "name": "自动链接打开助手",
+  "version": "1.0.0",
+  "description": "自动检测并打开链接，提高浏览效率",
+  "permissions": [
+    "clipboardRead",
+    "tabs",
+    "storage",
+    "history"
+  ],
+  "host_permissions": [
+    "https://weixin110.qq.com/*",
+    "https://sspai.com/*",
+    "https://link.zhihu.com/*",
+    "https://*.link.zhihu.com/*",
+    "https://link.csdn.net/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://weixin110.qq.com/*",
+        "https://sspai.com/link*",
+        "https://link.zhihu.com/*",
+        "https://*.link.zhihu.com/*",
+        "https://link.csdn.net/*"
+      ],
+      "js": ["redirect_history.js", "content.js"]
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["redirect_history.js"],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+} 
