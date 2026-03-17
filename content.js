@@ -33,7 +33,50 @@ document.addEventListener('click', async (event) => {
 // URL验证函数
 function isValidUrl(string) {
   try {
-    new URL(string);
+    // 先尝试解码URL，处理可能的多层编码
+    let processedUrl = string;
+    // 最多尝试解码5次，避免无限循环
+    for (let i = 0; i < 5; i++) {
+      if (!processedUrl.includes('%')) break;
+      try {
+        const decoded = decodeURIComponent(processedUrl);
+        if (decoded === processedUrl) break;
+        processedUrl = decoded;
+      } catch (e) {
+        break;
+      }
+    }
+    
+    // 检查是否为有效URL
+    const urlObj = new URL(processedUrl);
+    
+    // 检查域名是否包含无效字符，如逗号、空格等
+    const hostname = urlObj.hostname;
+    if (/[,\s<>"'()]/.test(hostname)) {
+      return false;
+    }
+    
+    // 检查是否为可疑的域名组合
+    if (hostname.includes('netlify') && hostname.includes('xn--')) {
+      return false;
+    }
+    
+    // 检查域名部分是否过长（可能是尝试绕过检测）
+    if (hostname.length > 100) {
+      return false;
+    }
+    
+    // 检查域名中的Punycode部分
+    const xnCount = (hostname.match(/xn--/g) || []).length;
+    if (xnCount > 3) {
+      return false;
+    }
+    
+    // 检查URL本身是否过长
+    if (processedUrl.length > 2000) {
+      return false;
+    }
+    
     return true;
   } catch (err) {
     return false;
@@ -57,13 +100,29 @@ function extractTargetUrl() {
       try {
         // 有些网站可能会对URL进行多次编码
         let decodedUrl = value;
-        while (decodedUrl.includes('%')) {
-          decodedUrl = decodeURIComponent(decodedUrl);
+        const maxDecodeAttempts = 5;
+        
+        // 控制解码次数，防止无限循环
+        for (let i = 0; i < maxDecodeAttempts; i++) {
+          if (!decodedUrl.includes('%')) break;
+          
+          try {
+            const newDecoded = decodeURIComponent(decodedUrl);
+            // 如果解码前后相同，说明已经完全解码
+            if (newDecoded === decodedUrl) break;
+            decodedUrl = newDecoded;
+          } catch (decodeErr) {
+            // 解码出错，使用当前结果
+            break;
+          }
         }
-        return decodedUrl;
+        
+        // 检查解码后的URL是否安全
+        if (isValidUrl(decodedUrl) && isSafeTargetUrl(decodedUrl)) {
+          return decodedUrl;
+        }
       } catch (e) {
-        console.error('URL解码失败:', e);
-        return value;
+        console.error('URL解码或验证失败:', e);
       }
     }
   }
@@ -73,11 +132,55 @@ function extractTargetUrl() {
 // 检查是否是安全的目标URL
 function isSafeTargetUrl(url) {
   try {
-    const targetUrl = new URL(url);
+    // 先尝试解码URL，处理可能的多层编码
+    let processedUrl = url;
+    // 最多尝试解码5次，避免无限循环
+    for (let i = 0; i < 5; i++) {
+      if (!processedUrl.includes('%')) break;
+      try {
+        const decoded = decodeURIComponent(processedUrl);
+        if (decoded === processedUrl) break;
+        processedUrl = decoded;
+      } catch (e) {
+        break;
+      }
+    }
+    
+    const targetUrl = new URL(processedUrl);
+    
+    // 检查是否为Punycode域名（以xn--开头的域名部分）
+    const hostname = targetUrl.hostname;
+    
+    // 检查域名是否包含无效字符
+    // 域名中不应包含逗号、空格等非法字符
+    const hasInvalidChars = /[,\s<>"'()]/.test(hostname);
+    if (hasInvalidChars) {
+      return false;
+    }
+    
+    const isPunycodeDomain = hostname.includes('xn--');
+    
     // 避免重定向回中转页面
-    return !targetUrl.hostname.includes('link.csdn.net') &&
-           !targetUrl.hostname.includes('link.zhihu.com') &&
-           !targetUrl.hostname.includes('weixin110.qq.com');
+    const isSafeDomain = !hostname.includes('link.csdn.net') &&
+                        !hostname.includes('link.zhihu.com') &&
+                        !hostname.includes('weixin110.qq.com');
+    
+    // 如果是Punycode域名，需要额外验证
+    if (isPunycodeDomain) {
+      // 简单规则：域名不应过长，且不应包含过多的xn--前缀
+      const xnCount = (hostname.match(/xn--/g) || []).length;
+      if (xnCount > 3 || hostname.length > 100) {
+        return false;
+      }
+      
+      // 检查netlify子域名的可疑组合
+      if (hostname.includes('netlify') && hostname.includes('xn--')) {
+        // 很可能是恶意域名
+        return false;
+      }
+    }
+    
+    return isSafeDomain;
   } catch (e) {
     return false;
   }
@@ -87,8 +190,16 @@ function isSafeTargetUrl(url) {
 function safeRedirect(targetUrl) {
   const currentUrl = window.location.href;
   try {
+    // 再次验证URL是否安全可靠
+    if (!isValidUrl(targetUrl) || !isSafeTargetUrl(targetUrl)) {
+      console.error('不安全的目标URL，拒绝跳转:', targetUrl);
+      window.redirectHistory.addFailRecord(currentUrl, '不安全的目标URL: ' + targetUrl);
+      return false;
+    }
+    
     // 使用全局变量
     window.redirectHistory.addRecord(currentUrl, targetUrl);
+    
     // 执行跳转
     window.location.href = targetUrl;
     return true;
@@ -257,7 +368,8 @@ function extractWeixinOriginalUrl() {
     const urlMatch = pageText.match(/https?:\/\/[^\s<>"']+/g);
     if (urlMatch) {
       for (const url of urlMatch) {
-        if (isSafeTargetUrl(url)) {
+        // 进行更严格的URL验证
+        if (isValidUrl(url) && isSafeTargetUrl(url)) {
           return url;
         }
       }
@@ -266,7 +378,8 @@ function extractWeixinOriginalUrl() {
     // 方法2：从链接元素中提取
     const links = document.querySelectorAll('a[href*="//"]');
     for (const link of links) {
-      if (isSafeTargetUrl(link.href)) {
+      // 进行更严格的URL验证
+      if (isValidUrl(link.href) && isSafeTargetUrl(link.href)) {
         return link.href;
       }
     }
@@ -276,8 +389,26 @@ function extractWeixinOriginalUrl() {
     const params = ['url', 'target', 'redirect_url', 'u', 'target_url'];
     for (const param of params) {
       const value = urlParams.get(param);
-      if (value && isSafeTargetUrl(value)) {
-        return decodeURIComponent(value);
+      if (value) {
+        // 解码URL参数
+        let decodedUrl = value;
+        try {
+          // 最多尝试解码5次
+          for (let i = 0; i < 5; i++) {
+            if (!decodedUrl.includes('%')) break;
+            const newDecoded = decodeURIComponent(decodedUrl);
+            if (newDecoded === decodedUrl) break;
+            decodedUrl = newDecoded;
+          }
+          
+          // 进行更严格的URL验证
+          if (isValidUrl(decodedUrl) && isSafeTargetUrl(decodedUrl)) {
+            return decodedUrl;
+          }
+        } catch (e) {
+          // 解码失败，继续下一个参数
+          continue;
+        }
       }
     }
 
@@ -288,7 +419,8 @@ function extractWeixinOriginalUrl() {
       const matches = text.match(/https?:\/\/[^\s<>"']+/g);
       if (matches) {
         for (const url of matches) {
-          if (isSafeTargetUrl(url)) {
+          // 进行更严格的URL验证
+          if (isValidUrl(url) && isSafeTargetUrl(url)) {
             return url;
           }
         }
@@ -317,7 +449,7 @@ function autoClickRedirectButton() {
   if (hostname === 'link.csdn.net') {
     // CSDN可能会对URL进行多次编码，所以使用通用提取函数
     const csdnTarget = extractTargetUrl();
-    if (csdnTarget && isSafeTargetUrl(csdnTarget)) {
+    if (csdnTarget && isValidUrl(csdnTarget) && isSafeTargetUrl(csdnTarget)) {
       // 添加随机延迟，避免被微信拦截
       setTimeout(() => {
         safeRedirect(csdnTarget);
@@ -328,7 +460,7 @@ function autoClickRedirectButton() {
     // 如果URL参数提取失败，尝试查找页面中的链接
     const links = document.querySelectorAll('a[href*="//"]');
     for (const link of links) {
-      if (!link.href.includes('csdn.net') && isSafeTargetUrl(link.href)) {
+      if (!link.href.includes('csdn.net') && isValidUrl(link.href) && isSafeTargetUrl(link.href)) {
         setTimeout(() => {
           safeRedirect(link.href);
         }, getRandomDelay(300, 500));
@@ -341,17 +473,24 @@ function autoClickRedirectButton() {
   if (hostname.includes('link.zhihu.com')) {
     // 尝试直接从URL中提取目标
     const zhihuTarget = new URLSearchParams(window.location.search).get('target');
-    if (zhihuTarget && isSafeTargetUrl(zhihuTarget)) {
-      setTimeout(() => {
-        safeRedirect(decodeURIComponent(zhihuTarget));
-      }, getRandomDelay(200, 400));
-      return;
+    if (zhihuTarget && isValidUrl(zhihuTarget) && isSafeTargetUrl(zhihuTarget)) {
+      try {
+        const decodedUrl = decodeURIComponent(zhihuTarget);
+        if (isValidUrl(decodedUrl) && isSafeTargetUrl(decodedUrl)) {
+          setTimeout(() => {
+            safeRedirect(decodedUrl);
+          }, getRandomDelay(200, 400));
+          return;
+        }
+      } catch (e) {
+        console.error('知乎链接解码失败:', e);
+      }
     }
     
     // 如果URL中没有，尝试查找页面中的链接
     const links = document.querySelectorAll('a[href*="//"]');
     for (const link of links) {
-      if (!link.href.includes('zhihu.com') && isSafeTargetUrl(link.href)) {
+      if (!link.href.includes('zhihu.com') && isValidUrl(link.href) && isSafeTargetUrl(link.href)) {
         setTimeout(() => {
           safeRedirect(link.href);
         }, getRandomDelay(200, 400));
@@ -362,7 +501,7 @@ function autoClickRedirectButton() {
 
   // 通用中转页面处理（适用于大多数使用URL参数的网站）
   const targetUrl = extractTargetUrl();
-  if (targetUrl && isSafeTargetUrl(targetUrl)) {
+  if (targetUrl && isValidUrl(targetUrl) && isSafeTargetUrl(targetUrl)) {
     // 保存原始URL到历史记录，以便返回
     const originalUrl = window.location.href;
     history.replaceState(null, '', originalUrl);
